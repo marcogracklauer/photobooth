@@ -1,727 +1,664 @@
-var L10N = {};
-var photoBooth = (function () {
-    config = {};
+/* globals initPhotoSwipeFromDOM L10N */
+
+const photoBooth = (function () {
     // vars
-    var public = {},
+    const public = {},
         loader = $('#loader'),
         startPage = $('#start'),
-        countDown = 5,
         timeToLive = 90000,
-        qr = false,
-        timeOut,
-        saving = false,
         gallery = $('#gallery'),
-        processing = false,
-        pswp = {},
         resultPage = $('#result'),
-				stream,
         webcamConstraints = {
             audio: false,
             video: {
-                width: 720,
-                height: 480,
-                facingMode: "user",
+                width: config.videoWidth,
+                height: config.videoHeight,
+                facingMode: config.camera_mode,
             }
-        };
+        },
+        videoView = $('#video--view').get(0),
+        videoSensor = document.querySelector('#video--sensor');
+
+    let timeOut,
+        nextCollageNumber = 0,
+        currentCollageFile = '',
+        imgFilter = config.default_imagefilter;
+
+    const modal = {
+        open: function (selector) {
+            $(selector).addClass('modal--show');
+        },
+        close: function (selector) {
+            if ($(selector).hasClass('modal--show')) {
+                $(selector).removeClass('modal--show');
+
+                return true;
+            }
+
+            return false;
+        },
+        toggle: function (selector) {
+            $(selector).toggleClass('modal--show');
+        },
+        empty: function (selector) {
+            modal.close(selector);
+
+            $(selector).find('.modal__body').empty();
+        }
+    };
+
+    public.reloadPage = function () {
+        window.location.reload();
+    }
 
     // timeOut function
     public.resetTimeOut = function () {
+        clearTimeout(timeOut);
+
         timeOut = setTimeout(function () {
-            window.location = window.location.origin;
+            public.reloadPage();
         }, timeToLive);
     }
 
     // reset whole thing
     public.reset = function () {
-        loader.hide();
-        qr = false;
-        $('.qr').html('').hide();
+        loader.removeClass('open');
+        loader.removeClass('error');
+        modal.empty('#qrCode');
         $('.qrbtn').removeClass('active').attr('style', '');
         $('.loading').text('');
-        gallery.removeClass('open');
-        $('.galInner').hide();
-        $('.resultInner').css({
-            'bottom': '-100px'
-        });
+        gallery.removeClass('gallery--open');
+        gallery.find('.gallery__inner').hide();
         $('.spinner').hide();
+        $('.send-mail').hide();
+        $('#video--view').hide();
+        $('#video--sensor').hide();
+        public.resetMailForm();
     }
 
     // init
-    public.init = function (options) {
-        public.l10n();
+    public.init = function () {
         public.reset();
-        var w = window.innerWidth;
-        var h = window.innerHeight;
-        $('#wrapper').width(w).height(h);
-        $('.galleryInner').width(w * 3);
-        $('.galleryInner').height(h);
-        $('.galleryInner div').width(w);
-        $('.galleryInner').css({
-            'left': -w
-        });
-        loader.width(w).height(h);
-        $('.stages').hide();
-        public.initPhotoSwipeFromDOM('#galimages');
 
-        startPage.show();
+        initPhotoSwipeFromDOM('#galimages');
+
+        resultPage.hide();
+        startPage.addClass('open');
     }
 
-    // check for resizing
-    public.handleResize = function () {
-        var w = window.innerWidth;
-        var h = window.innerHeight;
-        $('#wrapper').width(w).height(h);
-        $('#loader').width(w).height(h);
+    public.openNav = function () {
+        $('#mySidenav').addClass('sidenav--open');
     }
 
-    public.l10n = function (elem) {
-        elem = $(elem || 'body');
-        elem.find('[data-l10n]').each(function (i, item) {
-            item = $(item);
-            item.html(L10N[item.data('l10n')]);
+    public.closeNav = function () {
+        $('#mySidenav').removeClass('sidenav--open');
+    }
+
+    public.toggleNav = function () {
+        $('#mySidenav').toggleClass('sidenav--open');
+    }
+
+    public.startVideo = function () {
+        if (!navigator.mediaDevices) {
+            return;
+        }
+
+        const getMedia = (navigator.mediaDevices.getUserMedia || navigator.mediaDevices.webkitGetUserMedia || navigator.mediaDevices.mozGetUserMedia || false);
+
+        if (!getMedia) {
+            return;
+        }
+
+        if (config.previewCamFlipHorizontal) {
+            $('#video--view').addClass('flip-horizontal');
+        }
+
+        getMedia.call(navigator.mediaDevices, webcamConstraints)
+            .then(function (stream) {
+                $('#video--view').show();
+                videoView.srcObject = stream;
+                public.stream = stream;
+            })
+            .catch(function (error) {
+                console.log('Could not get user media: ', error)
+            });
+    }
+
+    public.stopVideo = function () {
+        if (public.stream) {
+            const track = public.stream.getTracks()[0];
+            track.stop();
+            $('#video--view').hide();
+        }
+    }
+
+    public.thrill = function (photoStyle) {
+        public.closeNav();
+        public.reset();
+
+        if (currentCollageFile && nextCollageNumber) {
+            photoStyle = 'collage';
+        }
+
+        if (config.previewFromCam) {
+            public.startVideo();
+        }
+
+        loader.addClass('open');
+        public.startCountdown(nextCollageNumber ? config.collage_cntdwn_time : config.cntdwn_time, $('#counter'), () => {
+            public.cheese(photoStyle);
         });
     }
 
     // Cheese
-    public.cheese = function () {
-        $('#counter').text('');
-        $('.loading').text(L10N.cheese);
-        public.takePic();
+    public.cheese = function (photoStyle) {
+        if (config.dev) {
+            console.log(photoStyle);
+        }
+
+        $('#counter').empty();
+        $('.cheese').empty();
+
+        if (photoStyle === 'photo') {
+            $('.cheese').text(L10N.cheese);
+        } else {
+            $('.cheese').text(L10N.cheeseCollage);
+            $('<p>').text(`${nextCollageNumber + 1} / ${config.collage_limit}`).appendTo('.cheese');
+        }
+
+        if (config.previewFromCam && config.previewCamTakesPic && !public.stream && !config.dev) {
+            console.log('No preview by device cam available!');
+
+            public.errorPic({
+                error: 'No preview by device cam available!'
+            });
+
+        } else {
+            setTimeout(() => {
+                public.takePic(photoStyle);
+            }, config.cheese_time);
+        }
     }
 
     // take Picture
-    public.takePic = function () {
-        processing = true;
-        setTimeout(function () {
-						if(useVideo){
-							var track = public.stream.getTracks()[0];
-							track.stop();
-							$('video').hide();
-						}
-            $('#counter').text('');
-            $('.spinner').show();
-            $('.loading').text(L10N.busy);
-        }, 1000);
-        $.ajax({
-            url: 'takePic.php',
-            dataType: "json",
-            cache: false,
-            success: function (result) {
-                if (result.error) {
-                    public.errorPic(result);
-                } else {
-                    public.renderPic(result);
-                }
-            },
-            error: function (xhr, status, error) {
-                public.errorPic(result);
+    public.takePic = function (photoStyle) {
+        if (config.dev) {
+            console.log('Take Picture:' + photoStyle);
+        }
+
+        if (config.previewFromCam) {
+            if (config.previewCamTakesPic && !config.dev) {
+                videoSensor.width = videoView.videoWidth;
+                videoSensor.height = videoView.videoHeight;
+                videoSensor.getContext('2d').drawImage(videoView, 0, 0);
             }
+            public.stopVideo();
+        }
+
+        const data = {
+            filter: imgFilter,
+            style: photoStyle,
+            canvasimg: videoSensor.toDataURL('image/jpeg'),
+        };
+
+        if (photoStyle === 'collage') {
+            data.file = currentCollageFile;
+            data.collageNumber = nextCollageNumber;
+        }
+
+        jQuery.post('api/takePic.php', data).done(function (result) {
+            console.log('took picture', result);
+            $('.cheese').empty();
+            if (config.previewCamFlipHorizontal) {
+                $('#video--view').removeClass('flip-horizontal');
+            }
+
+            // reset filter (selection) after picture was taken
+            imgFilter = config.default_imagefilter;
+            $('#mySidenav .activeSidenavBtn').removeClass('activeSidenavBtn');
+            $('#' + imgFilter).addClass('activeSidenavBtn');
+
+            if (result.error) {
+                public.errorPic(result);
+            } else if (result.success === 'collage' && (result.current + 1) < result.limit) {
+                currentCollageFile = result.file;
+                nextCollageNumber = result.current + 1;
+
+                $('.spinner').hide();
+                $('.loading').empty();
+                $('#video--sensor').hide();
+
+                if (config.continuous_collage) {
+                    setTimeout(() => {
+                        public.thrill('collage');
+                    }, 1000);
+                } else {
+                    $('<a class="btn" href="#">' + L10N.nextPhoto + '</a>').appendTo('.loading').click((ev) => {
+                        ev.preventDefault();
+
+                        public.thrill('collage');
+                    });
+                    $('.loading').append($('<a class="btn" style="margin-left:2px" href="./">').text(L10N.abort));
+                }
+            } else {
+                currentCollageFile = '';
+                nextCollageNumber = 0;
+
+                public.processPic(photoStyle, result);
+            }
+
+        }).fail(function (xhr, status, result) {
+            public.errorPic(result);
         });
     }
 
     // Show error Msg and reset
-    public.errorPic = function (result) {
+    public.errorPic = function (data) {
         setTimeout(function () {
             $('.spinner').hide();
-            $('.loading').html(L10N.error + '<a class="btn" href="/">' + L10N.reload + '</a>');
-        }, 1100);
+            $('.loading').empty();
+            $('.cheese').empty();
+            $('#video--view').hide();
+            $('#video--sensor').hide();
+            loader.addClass('error');
+            $('.loading').append($('<p>').text(L10N.error));
+            if (config.show_error_messages || config.dev) {
+                $('.loading').append($('<p class="text-muted">').text(data.error));
+            }
+            $('.loading').append($('<a class="btn" href="./">').text(L10N.reload));
+        }, 500);
+    }
+
+    public.processPic = function (photoStyle, result) {
+        const tempImageUrl = config.folders.tmp + '/' + result.file;
+
+        $('.spinner').show();
+        $('.loading').text(photoStyle === 'photo' ? L10N.busy : L10N.busyCollage);
+
+        if (photoStyle === 'photo') {
+            const preloadImage = new Image();
+            preloadImage.onload = () => {
+                $('#loader').css('background-image', `url(${tempImageUrl})`);
+                $('#loader').addClass('showBackgroundImage');
+            }
+            preloadImage.src = tempImageUrl;
+        }
+
+        $.ajax({
+            method: 'POST',
+            url: 'api/applyEffects.php',
+            data: {
+                file: result.file,
+                filter: imgFilter,
+                isCollage: photoStyle === 'collage',
+            },
+            success: (data) => {
+                console.log('picture processed', data);
+
+                if (data.error) {
+                    public.errorPic(data);
+                } else {
+                    public.renderPic(data.file);
+                }
+            },
+            error: (jqXHR, textStatus) => {
+                console.log('An error occurred', textStatus);
+
+                public.errorPic({
+                    error: 'Request failed: ' + textStatus,
+                });
+            },
+        });
     }
 
     // Render Picture after taking
-    public.renderPic = function (result) {
+    public.renderPic = function (filename) {
         // Add QR Code Image
-        $('.qr').html('');
-        $('<img src="qrcode.php?filename=' + result.img + '"/>').load(function () {
-            $(this).appendTo($('.qr'));
-            $('<p>').html(L10N.qrHelp).appendTo($('.qr'));
+        const qrCodeModal = $('#qrCode');
+        modal.empty(qrCodeModal);
+        $('<img src="api/qrcode.php?filename=' + filename + '"/>').on('load', function () {
+            const body = qrCodeModal.find('.modal__body');
+
+            $(this).appendTo(body);
+            $('<p>').css('max-width', this.width + 'px').html(L10N.qrHelp).appendTo(body);
         });
 
         // Add Print Link
         $(document).off('click touchstart', '.printbtn');
-        $(document).on('click touchstart', '.printbtn', function (e) {
+        $(document).on('click', '.printbtn', function (e) {
             e.preventDefault();
-            $.ajax({
-                url: 'print.php?filename=' + encodeURI(result.img),
-            }).done(function (data) {
+            e.stopPropagation();
+
+            public.printImage(filename, () => {
+                public.reloadPage();
+            });
+        });
+
+        resultPage.find('.deletebtn').off('click').on('click', (ev) => {
+            ev.preventDefault();
+
+            public.deleteImage(filename, (data) => {
+                if (data.success) {
+                    public.reloadPage();
+                } else {
+                    console.log('Error while deleting image');
+                }
             })
         });
 
         // Add Image to gallery and slider
-        public.addImage(result.img);
+        public.addImage(filename);
 
-        // Add Image
-        $('<img src="/'+imgFolder+'/' + result.img + '" class="original">').load(function () {
-            $('#result').css({
-                'background-image': 'url(/'+imgFolder+'/' + result.img + ')'
+        const imageUrl = config.folders.images + '/' + filename;
+
+        const preloadImage = new Image();
+        preloadImage.onload = () => {
+            resultPage.css({
+                'background-image': `url(${imageUrl}?filter=${imgFilter})`,
             });
-            startPage.fadeOut(400, function () {
-                resultPage.fadeIn(400, function () {
-                    setTimeout(function () {
-                        processing = false;
-                        loader.slideUp('fast');
-                    }, 400);
-                    setTimeout(function () {
-                        $('.resultInner').stop().animate({
-                            'bottom': '50px'
-                        }, 400).removeClass('hidden');
-                    }, 400);
-                    clearTimeout(timeOut);
-                    public.resetTimeOut();
-                });
-            });
-        });
+            resultPage.attr('data-img', filename);
+
+            startPage.hide();
+            resultPage.show();
+
+            $('.resultInner').addClass('show');
+            loader.removeClass('open');
+
+            $('#loader').css('background-image', 'url()');
+            $('#loader').removeClass('showBackgroundImage');
+
+            if (!config.dev) {
+                public.resetTimeOut();
+            }
+        };
+
+        preloadImage.src = imageUrl;
     }
 
     // add image to Gallery
-    public.addImage = function (image) {
-        // fixme: set to appendTo, if new images should appear at the end, or to prependTo, if new images should appear at the beginning
-        var $node = $('<a>').html('<img src="/'+thumbFolder+'/' + image + '" />').data('size', '1920x1280').attr('href', '/'+imgFolder+'/' + image + '?new=1')
-        if (gallery_newest_first) {
-            $node.prependTo($('#galimages'));
-        } else {
-            $node.appendTo($('#galimages'));
+    public.addImage = function (imageName) {
+        const thumbImg = new Image();
+        const bigImg = new Image();
+        let thumbSize = '';
+        let bigSize = '';
+
+        let imgtoLoad = 2;
+
+        thumbImg.onload = function () {
+            thumbSize = this.width + 'x' + this.height;
+            if (--imgtoLoad == 0) { allLoaded(); }
+        }
+
+        bigImg.onload = function () {
+            bigSize = this.width + 'x' + this.height;
+            if (--imgtoLoad == 0) { allLoaded(); }
+        }
+
+        bigImg.src = config.folders.images + '/' + imageName;
+        thumbImg.src = config.folders.thumbs + '/' + imageName;
+
+        function allLoaded() {
+            const linkElement = $('<a>').html(thumbImg);
+
+            linkElement.attr('data-size', bigSize);
+            linkElement.attr('href', config.folders.images + '/' + imageName);
+            linkElement.attr('data-med', config.folders.thumbs + '/' + imageName);
+            linkElement.attr('data-med-size', thumbSize);
+
+            if (config.newest_first) {
+                linkElement.prependTo($('#galimages'));
+            } else {
+                linkElement.appendTo($('#galimages'));
+            }
+
+            $('#galimages').children().not('a').remove();
         }
     }
 
     // Open Gallery Overview
-    public.openGallery = function (elem) {
-        var pos = elem.offset();
-        gallery.css({
-                'left': pos.left,
-                'top': pos.top
-            })
-            .data('left', pos.left)
-            .data('top', pos.top)
-            .addClass('open')
-            .animate({
-                'width': '102%',
-                'height': '100%',
-                'top': 0,
-                'left': 0
-            }, 300, function () {
-                $('.galInner').show();
-                gallery.css({
-                    'overflow-y': 'scroll'
-                });
-            });
+    public.openGallery = function () {
+        if (config.scrollbar) {
+            gallery.addClass('scrollbar');
+        }
+
+        gallery.addClass('gallery--open');
+
+        setTimeout(() => gallery.find('.gallery__inner').show(), 300);
     }
 
-    $(window).resize(public.handleResize);
+    public.resetMailForm = function () {
+        $('#send-mail-form').trigger('reset');
+        $('#mail-form-message').html('');
+    };
 
-    // Open QR Code in Gallery
+    // Countdown Function
+    public.startCountdown = function (start, element, cb) {
+        let count = 0;
+        let current = start;
+
+        function timerFunction() {
+            element.text(current);
+            current--;
+
+            element.removeClass('tick');
+
+            if (count < start) {
+                window.setTimeout(() => element.addClass('tick'), 50);
+                window.setTimeout(timerFunction, 1000);
+            } else {
+                cb();
+            }
+            count++;
+        }
+        timerFunction();
+    }
+
+    public.printImage = function (imageSrc, cb) {
+        modal.open('#print_mesg');
+
+        setTimeout(function () {
+            $.ajax({
+                url: 'api/print.php?filename=' + encodeURI(imageSrc),
+            }).done(function (data) {
+                if (config.dev) {
+                    console.log(data)
+                }
+
+                setTimeout(function () {
+                    modal.close('#print_mesg');
+                    cb();
+                }, 5000);
+            });
+        }, 1000);
+    }
+
+    public.deleteImage = function (imageName, cb) {
+        $.ajax({
+            url: 'api/deletePhoto.php',
+            method: 'POST',
+            data: {
+                file: imageName,
+            },
+            success: (data) => {
+                cb(data);
+            }
+        });
+    }
+
+    public.toggleMailDialog = function (img) {
+        const mail = $('.send-mail');
+
+        if (mail.hasClass('mail-active')) {
+            public.resetMailForm();
+            mail.removeClass('mail-active').fadeOut('fast');
+        } else {
+            $('#mail-form-image').val(img);
+
+            mail.addClass('mail-active').fadeIn('fast');
+        }
+    }
+
+    //Filter
+    $('.imageFilter').on('click', function () {
+        public.toggleNav();
+    });
+
+    $('.sidenav > div').on('click', function () {
+        $('.sidenav > div').removeAttr('class');
+        $(this).addClass('activeSidenavBtn');
+
+        imgFilter = $(this).attr('id');
+        const result = {file: $('#result').attr('data-img')};
+        if (config.dev) {
+            console.log('Applying filter', imgFilter, result);
+        }
+        public.processPic(imgFilter, result);
+    });
 
     // Take Picture Button
-    $('.takePic, .newpic').click(function (e) {
+    $('.takePic, .newpic').on('click', function (e) {
         e.preventDefault();
-        var target = $(e.target);
-        if (target.hasClass('gallery')) {
-            public.openGallery(target);
-        } else {
-            if (!processing) {
-                public.reset();
-								if(useVideo && navigator.mediaDevices){
-									navigator.getMedia = (navigator.mediaDevices.getUserMedia || navigator.mediaDevices.webkitGetUserMedia || navigator.mediaDevices.mozGetUserMedia || false);
-									if(navigator.getMedia) {
-										navigator.mediaDevices.getUserMedia(webcamConstraints)
-										.then(function(stream) {
-											$('video').show();
-											var video = document.getElementById('video');
-											video.srcObject = stream;
-											public.stream = stream;
-										})
-										.catch(function (error) {
-										});
-									}
-								}
-                loader.slideDown('slow', 'easeOutBounce', function () {
-                    public.countdown(countDown, $('#counter'));
-                });
-            }
-        }
+
+        public.thrill('photo');
+    });
+
+    // Take Collage Button
+    $('.takeCollage, .newcollage').on('click', function (e) {
+        e.preventDefault();
+
+        public.thrill('collage');
+    });
+
+    $('#mySidenav .closebtn').on('click', function (e) {
+        e.preventDefault();
+
+        public.closeNav();
     });
 
     // Open Gallery Button
-    $('#result .gallery, #start .gallery').click(function (e) {
+    $('.gallery-button').on('click', function (e) {
         e.preventDefault();
+
+        public.closeNav();
         public.openGallery($(this));
     });
 
     // Close Gallery Overview
-    $('.close_gal').click(function (e) {
-        e.preventDefault();
-        $('.galInner').hide();
-        gallery.css({
-            'overflow-y': 'visible'
-        });
-        $('#gallery').animate({
-            'width': '200px',
-            'height': '70px',
-            'left': $('#gallery').data('left'),
-            'top': $('#gallery').data('top')
-        }, 300, function () {
-            $('#gallery').removeClass('open');
-        });
-    });
-
-    $('.tabbox ul li').click(function () {
-        var elem = $(this),
-            target = $('.' + elem.data('target'));
-        if (!elem.hasClass('active')) {
-            $('.tabbox ul li').removeClass('active');
-            $('.tab').removeClass('active');
-            elem.addClass('active');
-            target.addClass('active');
-        }
-    });
-    // QR in gallery
-    $(document).on('click touchstart', '.gal-qr-code', function (e) {
+    $('.gallery__close').on('click', function (e) {
         e.preventDefault();
 
-        var pswpQR = $('.pswp__qr');
-        if (pswpQR.hasClass('qr-active')) {
-            pswpQR.removeClass('qr-active').fadeOut('fast');
-        } else {
-            pswpQR.empty();
-            var img = pswp.currItem.src;
-            img = img.split('/').pop();
-
-            $('<img>').attr('src', 'qrcode.php?filename=' + img).appendTo(pswpQR);
-
-            pswpQR.addClass('qr-active').fadeIn('fast');
-        }
+        gallery.find('.gallery__inner').hide();
+        gallery.removeClass('gallery--open');
     });
-    // print in gallery
-    $(document).on('click touchstart', '.gal-print', function (e) {
+
+    $('.mailbtn').on('click touchstart', function (e) {
         e.preventDefault();
-        var img = pswp.currItem.src;
-        img = img.replace(imgFolder+'/', '');
+        e.stopPropagation();
+
+        const img = resultPage.attr('data-img');
+
+        public.toggleMailDialog(img);
+    });
+
+    $('#send-mail-form').on('submit', function (e) {
+        e.preventDefault();
+
+        const message = $('#mail-form-message');
+        message.empty();
+
+        const form = $(this);
+        const oldValue = form.find('.btn').html();
+
+        form.find('.btn').html('<i class="fa fa-spinner fa-spin"></i>');
+
         $.ajax({
-            url: 'print.php?filename=' + encodeURI(img),
-        }).done(function (data) {
-        })
+            url: 'api/sendPic.php',
+            type: 'POST',
+            data: form.serialize(),
+            dataType: 'json',
+            cache: false,
+            success: function (result) {
+                if (result.success) {
+                    if (result.saved) {
+                        message.fadeIn().html('<span style="color:green">' + L10N.mailSaved + '</span>');
+                    } else {
+                        message.fadeIn().html('<span style="color:green">' + L10N.mailSent + '</span>');
+                    }
+                } else {
+                    message.fadeIn().html('<span style="color:red">' + result.error + '</span>');
+                }
+            },
+            error: function () {
+                message.fadeIn('fast').html('<span style="color: red;">' + L10N.mailError + '</span>');
+            },
+            complete: function () {
+                form.find('.btn').html(oldValue);
+            }
+        });
     });
 
-    $('#result').click(function (e) {
-        var target = $(e.target);
+    $('#send-mail-close').on('click', function () {
+        public.resetMailForm();
+        $('.send-mail').removeClass('mail-active').fadeOut('fast');
+    });
 
-        // Menü in and out
-        if (!target.hasClass('qrbtn') && target.closest('.qrbtn').length == 0 && !target.hasClass('newpic') && !target.hasClass('printbtn') && target.closest('.printbtn').length == 0 && !target.hasClass('resetBtn') && !target.hasClass('gallery') && qr != true && !target.hasClass('homebtn') && target.closest('.homebtn').length == 0) {
-            if ($('.resultInner').hasClass('hidden')) {
-                $('.resultInner').stop().animate({
-                    'bottom': '50px'
-                }, 400).removeClass('hidden');
-            } else {
-                $('.resultInner').stop().animate({
-                    'bottom': '-100px'
-                }, 400).addClass('hidden');
-            }
-        }
-
-        if (qr && !target.hasClass('qrbtn')) {
-					var qrpos = $('.qrbtn').offset(),
-						qrbtnwidth = $('.qrbtn').outerWidth(),
-						qrbtnheight = $('.qrbtn').outerHeight()
-						$('.qr').removeClass('active');
-            $('.qr').animate({
-							'width': qrbtnwidth,
-							'height': qrbtnheight,
-							'left': qrpos.left,
-							'top': qrpos.top,
-							'margin-left': 0,
-            }, 250, function(){
-							$('.qr').hide();
-						});
-						qr = false;
-        }
-
-        // Go to Home
-        if (target.hasClass('homebtn') || target.closest('.homebtn').length > 0) {
-            window.location = window.location.origin;
-        }
-
-        // Qr in and out
-        if (target.hasClass('qrbtn') || target.closest('.qrbtn').length > 0) {
-
-						var qrpos = $('.qrbtn').offset(),
-							qrbtnwidth = $('.qrbtn').outerWidth(),
-							qrbtnheight = $('.qrbtn').outerHeight()
-
-            if (qr) {
-								$('.qr').removeClass('active');
-                $('.qr').animate({
-                    'width': qrbtnwidth,
-                    'height': qrbtnheight,
-                    'left': qrpos.left,
-										'top': qrpos.top,
-										'margin-left': 0,
-                }, 250, function(){
-									$('.qr').hide();
-								});
-                qr = false;
-            } else {
-                qr = true;
-								$('.qr').css({
-									'width': qrbtnwidth,
-									'height': qrbtnheight,
-									'left': qrpos.left,
-									'top': qrpos.top
-								});
-								$('.qr').show();
-                $('.qr').animate({
-                    'width': 500,
-                    'height': 600,
-                    'left': '50%',
-                    'margin-left': -265,
-                    'top': 50
-                }, 250, function(){
-									$('.qr').addClass('active');
-								});
-            }
+    $('#result').on('click', function () {
+        if (!modal.close('#qrCode')) {
+            $('.resultInner').toggleClass('show');
         }
     });
 
     // Show QR Code
-    $('.qrbtn').click(function (e) {
+    $('.qrbtn').on('click', function (e) {
         e.preventDefault();
+        e.stopPropagation();
+
+        modal.toggle('#qrCode');
     });
 
-    $('.printbtn').click(function (e) {
+    $('.homebtn').on('click', function (e) {
         e.preventDefault();
+        e.stopPropagation();
+
+        public.reloadPage();
     });
 
-    $('.homebtn').click(function (e) {
-        e.preventDefault();
+    $('#cups-button').on('click', function (ev) {
+        ev.preventDefault();
+
+        const url = `http://${location.hostname}:631/jobs/`;
+        const features = 'width=1024,height=600,left=0,top=0,screenX=0,screenY=0,resizable=NO,scrollbars=NO';
+
+        window.open(url, 'newwin', features);
     });
 
-    // Countdown Function
-    public.countdown = function (calls, element) {
-        count = 0;
-        current = calls;
-        var timerFunction = function () {
-            element.text(current);
-            current--;
-            TweenLite.to(element, 0.0, {
-                scale: 8,
-                opacity: 0.2
-            });
-            TweenLite.to(element, 0.75, {
-                scale: 1,
-                opacity: 1
-            });
+    $(document).on('keyup', function (ev) {
+        if (config.photo_key && parseInt(config.photo_key, 10) === ev.keyCode) {
+            public.thrill('photo');
+        }
 
-            if (count < calls) {
-                window.setTimeout(timerFunction, 1000);
+        if (config.collage_key && parseInt(config.collage_key, 10) === ev.keyCode) {
+            if (config.use_collage) {
+                public.thrill('collage');
             } else {
-                public.cheese();
-            }
-            count++;
-        };
-        timerFunction();
-    }
-
-    //////////////////////////////////////////////////////////////////////////////////////////
-    ////// PHOTOSWIPE FUNCTIONS /////////////////////////////////////////////////////////////
-
-    public.initPhotoSwipeFromDOM = function (gallerySelector) {
-
-        // select all gallery elements
-        var galleryElements = document.querySelectorAll(gallerySelector);
-        for (var i = 0, l = galleryElements.length; i < l; i++) {
-            galleryElements[i].setAttribute('data-pswp-uid', i + 1);
-            galleryElements[i].onclick = onThumbnailsClick;
-        }
-
-        // Parse URL and open gallery if it contains #&pid=3&gid=1
-        var hashData = public.photoswipeParseHash();
-        if (hashData.pid > 0 && hashData.gid > 0) {
-            public.openPhotoSwipe(hashData.pid - 1, galleryElements[hashData.gid - 1], true);
-        }
-    }
-
-    var onThumbnailsClick = function (e) {
-        e = e || window.event;
-        e.preventDefault ? e.preventDefault() : e.returnValue = false;
-
-        var eTarget = e.target || e.srcElement;
-
-        var clickedListItem = closest(eTarget, function (el) {
-            return el.tagName === 'A';
-        });
-
-        if (!clickedListItem) {
-            return;
-        }
-
-        var clickedGallery = clickedListItem.parentNode;
-
-        var childNodes = clickedListItem.parentNode.childNodes,
-            numChildNodes = childNodes.length,
-            nodeIndex = 0,
-            index;
-
-        for (var i = 0; i < numChildNodes; i++) {
-            if (childNodes[i].nodeType !== 1) {
-                continue;
-            }
-
-            if (childNodes[i] === clickedListItem) {
-                index = nodeIndex;
-                break;
-            }
-            nodeIndex++;
-        }
-
-        if (index >= 0) {
-            public.openPhotoSwipe(index, clickedGallery);
-        }
-        return false;
-    };
-
-    public.photoswipeParseHash = function () {
-        var hash = window.location.hash.substring(1),
-            params = {};
-
-        if (hash.length < 5) { // pid=1
-            return params;
-        }
-
-        var vars = hash.split('&');
-        for (var i = 0; i < vars.length; i++) {
-            if (!vars[i]) {
-                continue;
-            }
-            var pair = vars[i].split('=');
-            if (pair.length < 2) {
-                continue;
-            }
-            params[pair[0]] = pair[1];
-        }
-
-        if (params.gid) {
-            params.gid = parseInt(params.gid, 10);
-        }
-
-        if (!params.hasOwnProperty('pid')) {
-            return params;
-        }
-        params.pid = parseInt(params.pid, 10);
-        return params;
-    };
-
-    // Get Items for Photoswipe Gallery
-    public.parseThumbnailElements = function (el) {
-        var thumbElements = el.childNodes,
-            numNodes = thumbElements.length,
-            items = [],
-            el,
-            childElements,
-            thumbnailEl,
-            size,
-            item;
-
-        for (var i = 0; i < numNodes; i++) {
-            el = thumbElements[i];
-
-            // include only element nodes
-            if (el.nodeType !== 1) {
-                continue;
-            }
-
-            childElements = el.children;
-            size = $(el).data('size').split('x');
-
-            // create slide object
-            item = {
-                src: el.getAttribute('href'),
-                w: parseInt(size[0], 10),
-                h: parseInt(size[1], 10),
-                author: el.getAttribute('data-author')
-            };
-
-            item.el = el; // save link to element for getThumbBoundsFn
-
-            if (childElements.length > 0) {
-                item.msrc = childElements[0].getAttribute('src'); // thumbnail url
-                if (childElements.length > 1) {
-                    item.title = childElements[1].innerHTML; // caption (contents of figure)
+                if (config.dev) {
+                    console.log('Collage key pressed. Please enable collage in your config. Triggering photo now.');
                 }
-            }
-
-
-            var mediumSrc = el.getAttribute('data-med');
-            if (mediumSrc) {
-                size = el.getAttribute('data-med-size').split('x');
-                // "medium-sized" image
-                item.m = {
-                    src: mediumSrc,
-                    w: parseInt(size[0], 10),
-                    h: parseInt(size[1], 10)
-                };
-            }
-            // original image
-            item.o = {
-                src: item.src,
-                w: item.w,
-                h: item.h
-            };
-
-            items.push(item);
-        }
-
-        return items;
-    };
-
-    public.openPhotoSwipe = function (index, galleryElement, disableAnimation) {
-        var pswpElement = document.querySelectorAll('.pswp')[0],
-            gallery,
-            options,
-            items;
-
-        items = public.parseThumbnailElements(galleryElement);
-
-        // define options (if needed)
-        options = {
-            index: index,
-
-            galleryUID: galleryElement.getAttribute('data-pswp-uid'),
-
-            getThumbBoundsFn: function (index) {
-                // See Options->getThumbBoundsFn section of docs for more info
-                var thumbnail = items[index].el.children[0],
-                    pageYScroll = window.pageYOffset || document.documentElement.scrollTop,
-                    rect = thumbnail.getBoundingClientRect();
-
-                return {
-                    x: rect.left,
-                    y: rect.top + pageYScroll,
-                    w: rect.width
-                };
-            },
-            shareEl: false,
-            zoomEl: false,
-            fullscreenEl: false,
-            addCaptionHTMLFn: function (item, captionEl, isFake) {
-                if (!item.title) {
-                    captionEl.children[0].innerText = '';
-                    return false;
-                }
-                captionEl.children[0].innerHTML = item.title + '<br/><small>Photo: ' + item.author + '</small>';
-                return true;
-            }
-
-        };
-
-        var radios = document.getElementsByName('gallery-style');
-        for (var i = 0, length = radios.length; i < length; i++) {
-            if (radios[i].checked) {
-                if (radios[i].id == 'radio-all-controls') {
-
-                } else if (radios[i].id == 'radio-minimal-black') {
-                    options.mainClass = 'pswp--minimal--dark';
-                    options.barsSize = {
-                        top: 0,
-                        bottom: 0
-                    };
-                    options.captionEl = false;
-                    options.fullscreenEl = false;
-                    options.shareEl = false;
-                    options.bgOpacity = 0.85;
-                    options.tapToClose = true;
-                    options.tapToToggleControls = false;
-                }
-                break;
+                public.thrill('photo');
             }
         }
-
-        if (disableAnimation) {
-            options.showAnimationDuration = 0;
-        }
-
-        // Pass data to PhotoSwipe and initialize it
-        pswp = new PhotoSwipe(pswpElement, PhotoSwipeUI_Default, items, options);
-
-        // see: http://photoswipe.com/documentation/responsive-images.html
-        var realViewportWidth,
-            useLargeImages = false,
-            firstResize = true,
-            imageSrcWillChange;
-
-        pswp.listen('beforeResize', function () {
-
-            var dpiRatio = window.devicePixelRatio ? window.devicePixelRatio : 1;
-            dpiRatio = Math.min(dpiRatio, 2.5);
-            realViewportWidth = pswp.viewportSize.x * dpiRatio;
-
-
-            if (realViewportWidth >= 1200 || (!pswp.likelyTouchDevice && realViewportWidth > 800) || screen.width > 1200) {
-                if (!useLargeImages) {
-                    useLargeImages = true;
-                    imageSrcWillChange = true;
-                }
-
-            } else {
-                if (useLargeImages) {
-                    useLargeImages = false;
-                    imageSrcWillChange = true;
-                }
-            }
-
-            if (imageSrcWillChange && !firstResize) {
-                pswp.invalidateCurrItems();
-            }
-
-            if (firstResize) {
-                firstResize = false;
-            }
-
-            imageSrcWillChange = false;
-
-        });
-
-        pswp.listen('gettingData', function (index, item) {
-            if (useLargeImages) {
-                item.src = item.o.src;
-                item.w = item.o.w;
-                item.h = item.o.h;
-            } else {
-                item.src = item.m.src;
-                item.w = item.m.w;
-                item.h = item.m.h;
-            }
-        });
-
-        pswp.listen('beforeChange', function () {
-            $('.pswp__qr').removeClass('qr-active').fadeOut('fast');
-        });
-
-        pswp.listen('close', function () {
-            $('.pswp__qr').removeClass('qr-active').fadeOut('fast');
-        });
-
-        pswp.init();
-
-
-    };
-
-    // find nearest parent element
-    var closest = function closest(el, fn) {
-        return el && (fn(el) ? el : closest(el.parentNode, fn));
-    };
-    //////////////////////////////////////////////////////////////////////////////////////////
-
+    });
 
     // clear Timeout to not reset the gallery, if you clicked anywhere
-    $(document).click(function (event) {
-        if (startPage.is(':visible')) {
-
-        } else {
-            clearTimeout(timeOut);
+    $(document).on('click', function () {
+        if (!startPage.is(':visible')) {
             public.resetTimeOut();
         }
     });
+
     // Disable Right-Click
-    if (!isdev) {
-        $(this).bind("contextmenu", function (e) {
+    if (!config.dev) {
+        $(this).on('contextmenu', function (e) {
             e.preventDefault();
         });
     }

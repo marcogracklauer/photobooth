@@ -1,138 +1,38 @@
 <?php
+session_start();
 
-require_once('../config.inc.php');
+require_once('../lib/config.php');
+require_once('../lib/configsetup.inc.php');
 
-	$configsetup = [
-		'general' => [
-			'language' => [
-				'type' => 'select',
-				'name' => 'language',
-				'placeholder' => 'language',
-				'options' => [
-					'de' => 'DE',
-					'fr' => 'FR',
-					'en' => 'EN'
-				],
-				'name' => 'language',
-				'value' => $config['language']
-			],
-			'dev' => [
-				'type' => 'checkbox',
-				'name' => 'dev',
-				'name' => 'dev',
-				'value' => $config['dev']
-			],
-			'use_print' => [
-				'type' => 'checkbox',
-				'name' => 'use_print',
-				'value' => $config['use_print']
-			],
-			'use_qr' => [
-				'type' => 'checkbox',
-				'name' => 'use_qr',
-				'value' => $config['use_qr']
-			],
-			'show_fork' => [
-				'type' => 'checkbox',
-				'name' => 'show_fork',
-				'value' => $config['show_fork']
-			],
-			'previewFromCam' => [
-				'type' => 'checkbox',
-				'name' => 'previewFromCam',
-				'value' => $config['previewFromCam']
-			]
-		],
-		'folders' => [
-			'images' => [
-				'type' => 'input',
-				'placeholder' => 'images',
-				'name' => 'folders[images]',
-				'value' => $config['folders']['images']
-			],
-			'thumbs' => [
-				'type' => 'input',
-				'placeholder' => 'thumbs',
-				'name' => 'folders[thumbs]',
-				'value' => $config['folders']['thumbs']
-			],
-			'qrcodes' => [
-				'type' => 'input',
-				'placeholder' => 'qrcodes',
-				'name' => 'folders[qrcodes]',
-				'value' => $config['folders']['qrcodes']
-			],
-			'print' => [
-				'type' => 'input',
-				'placeholder' => 'print',
-				'name' => 'folders[print]',
-				'value' => $config['folders']['print']
-			]
-		],
-		'gallery' => [
-			'newest_first' => [
-				'type' => 'checkbox',
-				'name' => 'newest_first',
-				'value' => 1
-			]
-		],
-		'commands' => [
-			'take_picture_cmd' => [
-				'type' => 'input',
-				'placeholder' => 'take_picture_cmd',
-				'name' => 'take_picture[cmd]',
-				'value' => $config['take_picture']['cmd']
-			],
-			'take_picture_msg' => [
-				'type' => 'input',
-				'placeholder' => 'take_picture_msg',
-				'name' => 'take_picture[msg]',
-				'value' => $config['take_picture']['msg']
-			],
-			'print_cmd' => [
-				'type' => 'input',
-				'placeholder' => 'print_cmd',
-				'name' => 'print[cmd]',
-				'value' => $config['take_picture']['cmd']
-			],
-			'print_msg' => [
-				'type' => 'input',
-				'placeholder' => 'print_msg',
-				'name' => 'print[msg]',
-				'value' => $config['take_picture']['msg']
-			]
-		]
-	];
 ?>
+<!DOCTYPE html>
 <html>
 <head>
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0 user-scalable=no">
+	<meta name="msapplication-TileColor" content="<?=$config['colors']['primary']?>">
+	<meta name="theme-color" content="<?=$config['colors']['primary']?>">
+
 	<title>Photobooth</title>
 
 	<!-- Favicon + Android/iPhone Icons -->
-	<link rel="apple-touch-icon" sizes="180x180" href="/resources/img/apple-touch-icon.png">
-	<link rel="icon" type="image/png" sizes="32x32" href="/resources/img/favicon-32x32.png">
-	<link rel="icon" type="image/png" sizes="16x16" href="/resources/img/favicon-16x16.png">
-	<link rel="manifest" href="/resources/img/site.webmanifest">
-	<link rel="mask-icon" href="/resources/img/safari-pinned-tab.svg" color="#5bbad5">
-	<meta name="msapplication-TileColor" content="#da532c">
-	<meta name="theme-color" content="#ffffff">
+	<link rel="apple-touch-icon" sizes="180x180" href="../resources/img/apple-touch-icon.png">
+	<link rel="icon" type="image/png" sizes="32x32" href="../resources/img/favicon-32x32.png">
+	<link rel="icon" type="image/png" sizes="16x16" href="../resources/img/favicon-16x16.png">
+	<link rel="manifest" href="../resources/img/site.webmanifest">
+	<link rel="mask-icon" href="../resources/img/safari-pinned-tab.svg" color="#5bbad5">
 
-	<link rel="stylesheet" type="text/css" href="/resources/css/normalize.css" />
-	<link rel="stylesheet" type="text/css" href="/resources/css/font-awesome.min.css" />
-	<link rel="stylesheet" type="text/css" href="/resources/css/default-skin/default-skin.css">
-	<link rel="stylesheet" type="text/css" href="/resources/css/style.css" />
-	<link rel="stylesheet" href="/resources/css/admin.css" />
-	<script type="text/javascript">
-		var isdev = true;
-		var gallery_newest_first = <?php echo ($config['gallery']['newest_first']) ? 'true' : 'false'; ?>;
-	</script>
+	<link rel="stylesheet" type="text/css" href="../node_modules/normalize.css/normalize.css" />
+	<link rel="stylesheet" type="text/css" href="../node_modules/font-awesome/css/font-awesome.css" />
+	<link rel="stylesheet" type="text/css" href="../resources/css/admin.css" />
+	<?php if ($config['rounded_corners']): ?>
+	<link rel="stylesheet" type="text/css" href="../resources/css/rounded.css" />
+	<?php endif; ?>
 </head>
-<body class="deselect">
-<div id="admin-settings">
+<body class="adminwrapper">
 	<div class="admin-panel">
-		<h2><a class="back-to-pb" href="/">Photobooth</a></h2>
+		<h2><a class="back-to-pb" href="../">Photobooth</a></h2>
+		<?php if( !$config['login_enabled'] || (isset($_SESSION['auth']) && $_SESSION['auth'] === true) || !$config['protect_admin']): ?>
 		<button class="reset-btn">
 			<span class="save">
 				<span data-l10n="reset"></span>
@@ -150,6 +50,15 @@ require_once('../config.inc.php');
 				<span data-l10n="saveerror"></span>
 			</span>
 		</button>
+
+		<?php if(isset($_SESSION['auth']) && $_SESSION['auth'] === true): ?>
+		<p><a href="../logout.php" class="btn btn--tiny btn--flex fa fa-sign-out"><span data-l10n="logout"></span></a></p>
+		<?php endif; ?>
+
+		<div id="checkVersion">
+			<p><a href="#" class="btn btn--tiny btn--flex"><span data-l10n="check_version"></span></a></p>
+		</div>
+
 		<div class="accordion">
 			<form>
 				<?php
@@ -169,27 +78,34 @@ require_once('../config.inc.php');
 								case 'input':
 									echo '<label data-l10n="'.$panel.'_'.$key.'">'.$panel.'_'.$key.'</label><input type="text" name="'.$field['name'].'" value="'.$field[
 										'value'].'" placeholder="'.$field['placeholder'].'"/>';
-								break;
+									break;
+								case 'color':
+									echo '<input type="color" name="'.$field['name'].'" value="'.$field['value'].'" placeholder="'.$field['placeholder'].'"/>
+										<label data-l10n="'.$panel.'_'.$key.'"> '.$panel.'_'.$key.'</label>';
+									break;
+								case 'hidden':
+									echo '<input type="hidden" name="'.$field['name'].'" value="'.$field['value'].'"/>';
+									break;
 								case 'checkbox':
 									$checked = '';
 									if ($field['value'] == 'true') {
 										$checked = ' checked="checked"';
 									}
 									echo '<label><input type="checkbox" '.$checked.' name="'.$field['name'].'" value="true"/><span data-l10n="'.$key.'">'.$key.'</span></label>';
-								break;
+									break;
+								case 'multi-select':
 								case 'select':
-									echo '<label data-l10n="'.$panel.'_'.$key.'">'.$panel.'_'.$key.'</label><select name="'.$field['name'].'">
-										<option data-l10n="'.$key.'"></option>
-									';
+									$selectTag = '<select name="'.$field['name'] . ($field['type'] === 'multi-select' ? '[]' : '') . '"' . ($field['type'] === 'multi-select' ? ' multiple="multiple" size="10"' : '') . '>';
+									echo '<label data-l10n="'.$panel.'_'.$key.'">'.$panel.'_'.$key.'</label>' . $selectTag;
 										foreach($field['options'] as $val => $option) {
 											$selected = '';
-											if ($val == $field['value']) {
+											if ((is_array($field['value']) && in_array($val, $field['value'])) || ($val === $field['value'])) {
 												$selected = ' selected="selected"';
 											}
 											echo '<option '.$selected.' value="'.$val.'">'.$option.'</option>';
 										}
 									echo '</select>';
-								break;
+									break;
 							}
 							echo '</div>';
 						}
@@ -215,14 +131,19 @@ require_once('../config.inc.php');
 					<span data-l10n="saveerror"></span>
 				</span>
 			</button>
+		<?php else:
+		header("location: ../login.php");
+		exit;
+		endif; ?>
 		</div>
 	</div>
 
-</div>
-<script type="text/javascript" src="/resources/js/jquery.js"></script>
-<script type="text/javascript" src="/resources/js/l10n.js"></script>
-<script type="text/javascript" src="/resources/js/admin.js"></script>
-<script type="text/javascript" src="/lang/<?php echo $config['language']; ?>.js"></script>
+	<script type="text/javascript" src="../api/config.php"></script>
+	<script type="text/javascript" src="../node_modules/jquery/dist/jquery.min.js"></script>
+	<script type="text/javascript" src="../resources/js/l10n.js"></script>
+	<script type="text/javascript" src="../resources/js/theme.js"></script>
+	<script type="text/javascript" src="../resources/js/admin.js"></script>
+	<script type="text/javascript" src="../resources/lang/<?php echo $config['language']; ?>.js"></script>
 
 </body>
 </html>
